@@ -1,12 +1,14 @@
-import axios, { AxiosError } from 'axios';
+import { useApolloClient } from '@apollo/client/react';
+import { AxiosError } from 'axios';
 import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { ToastContainer } from 'react-toastify'
 
+import { getEmployeeForCurrentUser } from '../api/employee';
+import { loginUser } from '../api/user';
 import { Button, Input } from '../components/Form';
-import { LOGIN_URL } from '../constants';
 import { useAuth } from "../contexts/auth/AuthContext";
 import { usePageTitle } from '../contexts/page-title/PageTitleContext';
 import { decodeJwtPayload } from '../hooks/utils';
@@ -14,11 +16,6 @@ import { decodeJwtPayload } from '../hooks/utils';
 type FormValues = {
     email: string;
     password: string;
-}
-
-type LoginResponse = {
-    jwt: string;
-    refreshToken: string;
 }
 
 type UserInfo = {
@@ -31,13 +28,18 @@ export const Login: React.FC = () => {
     const [error, setError] = useState<string>();
     const { setTitle } = usePageTitle();
     const navigate = useNavigate();
+    const apolloClient = useApolloClient();
     const { register, handleSubmit, formState } = useForm<FormValues>();
     const { errors: formErrors } = formState;
-    const { login } = useAuth();
+    const { login, logout } = useAuth();
 
     useEffect(() => {
         setTitle('Login');
     }, [setTitle]);
+
+    useEffect(() => {
+        logout();
+    }, []);
 
     useEffect(() => {
         if(error) {
@@ -50,19 +52,23 @@ export const Login: React.FC = () => {
 
     const _handleSubmit: any = async (data: FormValues) => {
         try {
-            const loginResponse = await axios.post<LoginResponse>(LOGIN_URL, data);
+            const loginResponse = await loginUser(data);
             const userData: UserInfo = decodeJwtPayload(loginResponse.data.jwt);
+            const employeeData = await getEmployeeForCurrentUser(apolloClient, userData.ID);
+            const userFullname = employeeData ? `${employeeData.firstName} ${employeeData.lastName}` : userData.Email;
 
-            login({ id: userData.ID, name: userData.Email, permissions: userData.Permissions }, loginResponse.data.jwt, loginResponse.data.refreshToken);
+            login({ id: userData.ID, name: userFullname, email: userData.Email, permissions: userData.Permissions }, loginResponse.data.jwt, loginResponse.data.refreshToken);
             
             toast.success("Login successful", {
                 theme: "light"
             });
 
-            setTimeout(() => navigate("/"), 2000);
+            setTimeout(() => navigate("/"), 1000);
         } catch(err) {
             if(err instanceof AxiosError) {
                 setError(err.response?.data);
+            } else if (err instanceof Error) {
+                setError(err.message);
             }
         }
     }
